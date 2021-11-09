@@ -17,10 +17,18 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/spf13/viper"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 )
 
 var cfgFile string
@@ -28,16 +36,9 @@ var cfgFile string
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "ddb",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Short: "",
+	Long:  "",
+	Run:   runRootCmd,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -82,4 +83,40 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
+}
+
+func runRootCmd(cmd *cobra.Command, args []string) {
+	ctx := cmd.Context()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	imageName := "amazon/dynamodb-local:latest"
+
+	out, err := cli.ImagePull(ctx, imageName, types.ImagePullOptions{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	io.Copy(os.Stdout, out)
+
+	containerConfig := &container.Config{
+		Image:        imageName,
+		ExposedPorts: nat.PortSet{nat.Port("8000"): struct{}{}},
+	}
+	hostConfig := &container.HostConfig{
+		PortBindings: nat.PortMap{
+			nat.Port("8000"): []nat.PortBinding{{HostPort: "8000"}},
+		},
+	}
+	resp, err := cli.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(resp.ID)
 }
