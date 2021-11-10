@@ -118,5 +118,6 @@ func runRootCmd(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	fmt.Println(resp.ID)
+	fmt.Printf("ContainerID: %s\n", resp.ID)
+	fmt.Printf("Port: %d\n", 8000)
 }
